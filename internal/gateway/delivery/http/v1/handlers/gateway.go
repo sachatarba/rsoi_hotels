@@ -8,6 +8,7 @@ import (
 	"github.com/sachatarba/rsoi_hotels/internal/gateway/domain/services"
 	"github.com/sachatarba/rsoi_hotels/pkg/circuitbreaker"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,13 +31,18 @@ func isServiceUnavailable(err error) bool {
 		return true
 	}
 
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return true
+	}
+
 	errStr := strings.ToLower(err.Error())
-	return strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "context deadline exceeded")
+	return strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "no such host")
 }
 
 func (h *GatewayHandler) handleServiceError(c *gin.Context, err error) {
 	if isServiceUnavailable(err) {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service is unavailable"})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"message": "Service is unavailable: " + err.Error()})
 		return
 	}
 	c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})

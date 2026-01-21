@@ -21,7 +21,6 @@ type PaginationResponse struct {
 	Page          int           `json:"page"`
 	PageSize      int           `json:"pageSize"`
 	TotalElements int           `json:"totalElements"`
-	TotalPages    int           `json:"totalPages"`
 	Items         []interface{} `json:"items"`
 }
 
@@ -43,14 +42,14 @@ type HotelInfo struct {
 }
 
 type LoyaltyInfoResponse struct {
-	Status           string `json:"status"`
-	Discount         int    `json:"discount"`
-	ReservationCount int    `json:"reservationCount"`
+	Status           string `json:"status,omitempty"`
+	Discount         int    `json:"discount,omitempty"`
+	ReservationCount int    `json:"reservationCount,omitempty"`
 }
 
 type PaymentInfo struct {
-	Status string `json:"status"`
-	Price  int    `json:"price"`
+	Status string `json:"status,omitempty"`
+	Price  int    `json:"price,omitempty"`
 }
 
 type ReservationResponse struct {
@@ -60,9 +59,8 @@ type ReservationResponse struct {
 	EndDate        Date        `json:"endDate"`
 	Status         string      `json:"status"`
 	Payment        PaymentInfo `json:"payment"`
-
-	PaymentUid uuid.UUID `json:"-"`
-	HotelUid   uuid.UUID `json:"-"`
+	PaymentUid     uuid.UUID   `json:"-"`
+	HotelUid       uuid.UUID   `json:"-"`
 }
 
 type CreateReservationResponse struct {

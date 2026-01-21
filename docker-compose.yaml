@@ -1,0 +1,143 @@
+services:
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: loyalty_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: always
+
+  #  migrator:
+  #    ... (оставь закомментированным или как было) ...
+
+  loyalty-service:
+    build:
+      context: .
+      dockerfile: loyalty.Dockerfile
+    container_name: loyalty_app
+    environment:
+      ENV: ${ENV}
+      PG_LOYALTY_URL: ${PG_LOYALTY_URL}
+      PG_LOYALTY_MAX_POOL_SIZE: ${PG_LOYALTY_MAX_POOL_SIZE}
+      PG_LOYALTY_CONN_ATTEMPTS: ${PG_LOYALTY_CONN_ATTEMPTS}
+      PG_LOYALTY_CONN_TIMEOUT_SECONDS: ${PG_LOYALTY_CONN_TIMEOUT_SECONDS}
+      LOYALTY_SERVICE_PORT: ${LOYALTY_SERVICE_PORT}
+      PG_RESERVATION_URL: ${PG_RESERVATION_URL}
+      PG_RESERVATION_MAX_POOL_SIZE: ${PG_RESERVATION_MAX_POOL_SIZE}
+      PG_RESERVATION_CONN_ATTEMPTS: ${PG_RESERVATION_CONN_ATTEMPTS}
+      PG_RESERVATION_CONN_TIMEOUT_SECONDS: ${PG_RESERVATION_CONN_TIMEOUT_SECONDS}
+      RESERVATION_SERVICE_PORT: ${RESERVATION_SERVICE_PORT}
+      PG_PAYMENT_URL: ${PG_PAYMENT_URL}
+      PG_PAYMENT_MAX_POOL_SIZE: ${PG_PAYMENT_MAX_POOL_SIZE}
+      PG_PAYMENT_CONN_ATTEMPTS: ${PG_PAYMENT_CONN_ATTEMPTS}
+      PG_PAYMENT_CONN_TIMEOUT_SECONDS: ${PG_PAYMENT_CONN_TIMEOUT_SECONDS}
+      PAYMENT_SERVICE_PORT: ${PAYMENT_SERVICE_PORT}
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    ports:
+      - "${LOYALTY_SERVICE_PORT}:${LOYALTY_SERVICE_PORT}"
+    restart: on-failure
+
+  reservation-service:
+    build:
+      context: .
+      dockerfile: reservations.Dockerfile
+    container_name: reservation_app
+    environment:
+      ENV: ${ENV}
+      PG_LOYALTY_URL: ${PG_LOYALTY_URL}
+      PG_LOYALTY_MAX_POOL_SIZE: ${PG_LOYALTY_MAX_POOL_SIZE}
+      PG_LOYALTY_CONN_ATTEMPTS: ${PG_LOYALTY_CONN_ATTEMPTS}
+      PG_LOYALTY_CONN_TIMEOUT_SECONDS: ${PG_LOYALTY_CONN_TIMEOUT_SECONDS}
+      LOYALTY_SERVICE_PORT: ${LOYALTY_SERVICE_PORT}
+      PG_RESERVATION_URL: ${PG_RESERVATION_URL}
+      PG_RESERVATION_MAX_POOL_SIZE: ${PG_RESERVATION_MAX_POOL_SIZE}
+      PG_RESERVATION_CONN_ATTEMPTS: ${PG_RESERVATION_CONN_ATTEMPTS}
+      PG_RESERVATION_CONN_TIMEOUT_SECONDS: ${PG_RESERVATION_CONN_TIMEOUT_SECONDS}
+      RESERVATION_SERVICE_PORT: ${RESERVATION_SERVICE_PORT}
+      PG_PAYMENT_URL: ${PG_PAYMENT_URL}
+      PG_PAYMENT_MAX_POOL_SIZE: ${PG_PAYMENT_MAX_POOL_SIZE}
+      PG_PAYMENT_CONN_ATTEMPTS: ${PG_PAYMENT_CONN_ATTEMPTS}
+      PG_PAYMENT_CONN_TIMEOUT_SECONDS: ${PG_PAYMENT_CONN_TIMEOUT_SECONDS}
+      PAYMENT_SERVICE_PORT: ${PAYMENT_SERVICE_PORT}
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    ports:
+      - "${RESERVATION_SERVICE_PORT}:${RESERVATION_SERVICE_PORT}"
+    restart: on-failure
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: payments.Dockerfile
+    container_name: payment_app
+    environment:
+      ENV: ${ENV}
+      PG_LOYALTY_URL: ${PG_LOYALTY_URL}
+      PG_LOYALTY_MAX_POOL_SIZE: ${PG_LOYALTY_MAX_POOL_SIZE}
+      PG_LOYALTY_CONN_ATTEMPTS: ${PG_LOYALTY_CONN_ATTEMPTS}
+      PG_LOYALTY_CONN_TIMEOUT_SECONDS: ${PG_LOYALTY_CONN_TIMEOUT_SECONDS}
+      LOYALTY_SERVICE_PORT: ${LOYALTY_SERVICE_PORT}
+      PG_RESERVATION_URL: ${PG_RESERVATION_URL}
+      PG_RESERVATION_MAX_POOL_SIZE: ${PG_RESERVATION_MAX_POOL_SIZE}
+      PG_RESERVATION_CONN_ATTEMPTS: ${PG_RESERVATION_CONN_ATTEMPTS}
+      PG_RESERVATION_CONN_TIMEOUT_SECONDS: ${PG_RESERVATION_CONN_TIMEOUT_SECONDS}
+      RESERVATION_SERVICE_PORT: ${RESERVATION_SERVICE_PORT}
+      PG_PAYMENT_URL: ${PG_PAYMENT_URL}
+      PG_PAYMENT_MAX_POOL_SIZE: ${PG_PAYMENT_MAX_POOL_SIZE}
+      PG_PAYMENT_CONN_ATTEMPTS: ${PG_PAYMENT_CONN_ATTEMPTS}
+      PG_PAYMENT_CONN_TIMEOUT_SECONDS: ${PG_PAYMENT_CONN_TIMEOUT_SECONDS}
+      PAYMENT_SERVICE_PORT: ${PAYMENT_SERVICE_PORT}
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    ports:
+      - "${PAYMENT_SERVICE_PORT}:${PAYMENT_SERVICE_PORT}"
+    restart: on-failure
+
+  gateway-service:
+    build:
+      context: .
+      dockerfile: gateway.Dockerfile
+    container_name: gateway_app
+    environment:
+      ENV: ${ENV}
+      PG_LOYALTY_URL: ${PG_LOYALTY_URL}
+      PG_LOYALTY_MAX_POOL_SIZE: ${PG_LOYALTY_MAX_POOL_SIZE}
+      PG_LOYALTY_CONN_ATTEMPTS: ${PG_LOYALTY_CONN_ATTEMPTS}
+      PG_LOYALTY_CONN_TIMEOUT_SECONDS: ${PG_LOYALTY_CONN_TIMEOUT_SECONDS}
+      LOYALTY_SERVICE_PORT: ${LOYALTY_SERVICE_PORT}
+      PG_RESERVATION_URL: ${PG_RESERVATION_URL}
+      PG_RESERVATION_MAX_POOL_SIZE: ${PG_RESERVATION_MAX_POOL_SIZE}
+      PG_RESERVATION_CONN_ATTEMPTS: ${PG_RESERVATION_CONN_ATTEMPTS}
+      PG_RESERVATION_CONN_TIMEOUT_SECONDS: ${PG_RESERVATION_CONN_TIMEOUT_SECONDS}
+      RESERVATION_SERVICE_PORT: ${RESERVATION_SERVICE_PORT}
+      PG_PAYMENT_URL: ${PG_PAYMENT_URL}
+      PG_PAYMENT_MAX_POOL_SIZE: ${PG_PAYMENT_MAX_POOL_SIZE}
+      PG_PAYMENT_CONN_ATTEMPTS: ${PG_PAYMENT_CONN_ATTEMPTS}
+      PG_PAYMENT_CONN_TIMEOUT_SECONDS: ${PG_PAYMENT_CONN_TIMEOUT_SECONDS}
+      PAYMENT_SERVICE_PORT: ${PAYMENT_SERVICE_PORT}
+      GATEWAY_SERVICE_PORT: 8080
+    depends_on:
+      loyalty-service:
+        condition: service_started
+      reservation-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    restart: on-failure

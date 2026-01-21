@@ -1,0 +1,117 @@
+name: GitHub Classroom Workflow
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+env:
+  ENV: ${{ secrets.ENV }}
+  POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+  POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+
+  GATEWAY_SERVICE_PORT: ${{ secrets.GATEWAY_SERVICE_PORT }}
+  LOYALTY_SERVICE_PORT: ${{ secrets.LOYALTY_SERVICE_PORT }}
+  PAYMENT_SERVICE_PORT: ${{ secrets.PAYMENT_SERVICE_PORT }}
+  RESERVATION_SERVICE_PORT: ${{ secrets.RESERVATION_SERVICE_PORT }}
+
+  PG_LOYALTY_URL: ${{ secrets.PG_LOYALTY_URL }}
+  PG_PAYMENT_URL: ${{ secrets.PG_PAYMENT_URL }}
+  PG_RESERVATION_URL: ${{ secrets.PG_RESERVATION_URL }}
+
+  PG_LOYALTY_MAX_POOL_SIZE: ${{ secrets.PG_MAX_POOL_SIZE }}
+  PG_LOYALTY_CONN_ATTEMPTS: ${{ secrets.PG_CONN_ATTEMPTS }}
+  PG_LOYALTY_CONN_TIMEOUT_SECONDS: ${{ secrets.PG_CONN_TIMEOUT }}
+
+  PG_RESERVATION_MAX_POOL_SIZE: ${{ secrets.PG_MAX_POOL_SIZE }}
+  PG_RESERVATION_CONN_ATTEMPTS: ${{ secrets.PG_CONN_ATTEMPTS }}
+  PG_RESERVATION_CONN_TIMEOUT_SECONDS: ${{ secrets.PG_CONN_TIMEOUT }}
+
+  PG_PAYMENT_MAX_POOL_SIZE: ${{ secrets.PG_MAX_POOL_SIZE }}
+  PG_PAYMENT_CONN_ATTEMPTS: ${{ secrets.PG_CONN_ATTEMPTS }}
+  PG_PAYMENT_CONN_TIMEOUT_SECONDS: ${{ secrets.PG_CONN_TIMEOUT }}
+
+jobs:
+  build:
+    name: Autograding
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24'
+
+      - name: Build and Run Unit Tests
+        run: go test -v ./...
+
+      - uses: docker/setup-buildx-action@v2
+      - name: Build images
+        timeout-minutes: 10
+        run: docker compose build
+
+      # Запуск БД
+      - name: Start Database
+        run: docker compose up -d postgres-db
+
+      - name: Wait for Postgres
+        run: |
+          until docker exec loyalty_postgres pg_isready -U ${{ secrets.POSTGRES_USER }}; do
+            echo "Waiting for postgres..."
+            sleep 2
+          done
+          sleep 5
+
+      # Накат миграций
+      - name: Install Goose
+        run: go install github.com/pressly/goose/v3/cmd/goose@latest
+
+      - name: Run Migrations
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          
+          DSN="postgres://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432"
+          
+          echo "Migrating Loyalty..."
+          goose -dir migrations/loyalty/migrations postgres "$DSN/loyalty_db?sslmode=disable" up
+          
+          echo "Migrating Payments..."
+          goose -dir migrations/payments/migrations postgres "$DSN/payments_db?sslmode=disable" up
+          
+          echo "Migrating Reservations..."
+          goose -dir migrations/reservations/migrations postgres "$DSN/reservation_db?sslmode=disable" up
+
+      # Запуск сервисов
+      - name: Run containers
+        timeout-minutes: 5
+        run: |
+          docker compose up -d
+          chmod +x ./scripts/wait-script.sh
+          ./scripts/wait-script.sh
+        env:
+          WAIT_PORTS: "${{ secrets.GATEWAY_SERVICE_PORT }},${{ secrets.RESERVATION_SERVICE_PORT }},${{ secrets.PAYMENT_SERVICE_PORT }},${{ secrets.LOYALTY_SERVICE_PORT }}"
+
+      # Postman тесты
+      - name: Run API Tests
+        uses: matt-ball/newman-action@master
+        with:
+          collection: v2/postman/collection.json
+          environment: v2/postman/environment.json
+          delayRequest: 100
+          reporters: '[ "cli" ]'
+
+      - uses: education/autograding@v1
+        id: autograder
+        continue-on-error: true
+
+      - name: Stop containers
+        if: always()
+        continue-on-error: true
+        run: docker compose down -v

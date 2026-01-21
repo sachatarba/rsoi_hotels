@@ -58,12 +58,14 @@ func (s *GatewayService) GetHotels(ctx context.Context, page, size int) (*entity
 }
 
 func (s *GatewayService) GetUserInfo(ctx context.Context, username string) (*entity.UserInfoResponse, error) {
+	response := &entity.UserInfoResponse{}
+
 	loyalty, err := s.loyaltyRepo.GetLoyalty(ctx, username)
 	if err != nil {
 		s.logger.Error("Failed to get loyalty for GetUserInfo", "error", err)
-		loyalty = &entity.LoyaltyInfoResponse{
-			Status: "UNAVAILABLE",
-		}
+		response.Loyalty = entity.LoyaltyInfoResponse{}
+	} else {
+		response.Loyalty = *loyalty
 	}
 
 	rawReservations, err := s.reservationRepo.GetUserReservations(ctx, username)
@@ -76,11 +78,9 @@ func (s *GatewayService) GetUserInfo(ctx context.Context, username string) (*ent
 		enriched, _ := s.enrichReservation(ctx, raw)
 		reservations = append(reservations, enriched)
 	}
+	response.Reservations = reservations
 
-	return &entity.UserInfoResponse{
-		Reservations: reservations,
-		Loyalty:      *loyalty,
-	}, nil
+	return response, nil
 }
 
 func (s *GatewayService) GetReservation(ctx context.Context, username string, reservationUid uuid.UUID) (*entity.ReservationResponse, error) {
@@ -90,13 +90,51 @@ func (s *GatewayService) GetReservation(ctx context.Context, username string, re
 	}
 
 	enriched, err := s.enrichReservation(ctx, *raw)
+	if err != nil && errors.Is(err, circuitbreaker.ErrCircuitOpen) {
+		return &enriched, nil
+	}
 	if err != nil {
-		if errors.Is(err, circuitbreaker.ErrCircuitOpen) {
-			return &enriched, nil
-		}
 		return nil, err
 	}
+
 	return &enriched, nil
+}
+
+func (s *GatewayService) enrichReservation(ctx context.Context, raw entity.ReservationServiceResponse) (entity.ReservationResponse, error) {
+	res := entity.ReservationResponse{
+		ReservationUid: raw.ReservationUid,
+		Status:         raw.Status,
+		StartDate:      entity.Date(raw.StartDate),
+		EndDate:        entity.Date(raw.EndDate),
+		PaymentUid:     raw.PaymentUid,
+		HotelUid:       raw.HotelUid,
+	}
+
+	if raw.HotelUid != uuid.Nil {
+		hotel, err := s.reservationRepo.GetHotel(ctx, raw.HotelUid)
+		if err == nil {
+			res.Hotel = entity.HotelInfo{
+				HotelUid:    hotel.HotelUid,
+				Name:        hotel.Name,
+				FullAddress: fmt.Sprintf("%s, %s, %s", hotel.Country, hotel.City, hotel.Address),
+				Stars:       hotel.Stars,
+			}
+		}
+	}
+
+	var finalErr error
+	if raw.PaymentUid != uuid.Nil {
+		payment, err := s.paymentRepo.GetPayment(ctx, raw.PaymentUid)
+		if err != nil {
+			s.logger.Warn("Failed to get payment info on enrichment, returning empty payment", "payment_uid", raw.PaymentUid, "error", err)
+			res.Payment = entity.PaymentInfo{}
+			finalErr = err
+		} else {
+			res.Payment = *payment
+		}
+	}
+
+	return res, finalErr
 }
 
 func (s *GatewayService) BookHotel(ctx context.Context, username string, req entity.CreateReservationRequest) (*entity.CreateReservationResponse, error) {
@@ -184,7 +222,7 @@ func (s *GatewayService) CancelReservation(ctx context.Context, username string,
 	if raw.PaymentUid != uuid.Nil {
 		err = s.paymentRepo.CancelPayment(ctx, raw.PaymentUid)
 		if err != nil {
-			s.logger.Error("Failed to cancel payment, rolling back reservation status", "uid", raw.PaymentUid, "error", err)
+			s.logger.Error("Failed to cancel payment, payment service is critical", "uid", raw.PaymentUid, "error", err)
 			return fmt.Errorf("payment service is critical, failed to cancel: %w", err)
 		}
 	}
@@ -203,40 +241,6 @@ func (s *GatewayService) CancelReservation(ctx context.Context, username string,
 
 func (s *GatewayService) GetLoyalty(ctx context.Context, username string) (*entity.LoyaltyInfoResponse, error) {
 	return s.loyaltyRepo.GetLoyalty(ctx, username)
-}
-
-func (s *GatewayService) enrichReservation(ctx context.Context, raw entity.ReservationServiceResponse) (entity.ReservationResponse, error) {
-	res := entity.ReservationResponse{
-		ReservationUid: raw.ReservationUid,
-		Status:         raw.Status,
-		StartDate:      entity.Date(raw.StartDate),
-		EndDate:        entity.Date(raw.EndDate),
-		PaymentUid:     raw.PaymentUid,
-		HotelUid:       raw.HotelUid,
-	}
-
-	if raw.HotelUid != uuid.Nil {
-		hotel, err := s.reservationRepo.GetHotel(ctx, raw.HotelUid)
-		if err == nil {
-			res.Hotel = entity.HotelInfo{
-				HotelUid:    hotel.HotelUid,
-				Name:        hotel.Name,
-				FullAddress: fmt.Sprintf("%s, %s, %s", hotel.Country, hotel.City, hotel.Address),
-				Stars:       hotel.Stars,
-			}
-		}
-	}
-
-	if raw.PaymentUid != uuid.Nil {
-		payment, err := s.paymentRepo.GetPayment(ctx, raw.PaymentUid)
-		if err != nil {
-			s.logger.Warn("Failed to get payment info on enrichment", "payment_uid", raw.PaymentUid, "error", err)
-		} else {
-			res.Payment = *payment
-		}
-	}
-
-	return res, nil
 }
 
 func (s *GatewayService) GetUserReservations(ctx context.Context, username string) ([]entity.ReservationResponse, error) {

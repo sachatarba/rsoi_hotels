@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/sachatarba/rsoi_hotels/internal/gateway/domain/entity"
+	domainErrors "github.com/sachatarba/rsoi_hotels/internal/gateway/domain/errors"
 	"github.com/sachatarba/rsoi_hotels/pkg/circuitbreaker"
 	"net/http"
 	"time"
@@ -33,29 +34,24 @@ func (r *ReservationRepository) GetHotels(ctx context.Context, page, size int) (
 		if err != nil {
 			return nil, err
 		}
-
 		resp, err := r.client.Do(req)
 		if err != nil {
 			return nil, err
 		}
 		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("reservation service error (get hotels): status %d", resp.StatusCode)
+			return nil, fmt.Errorf("status %d", resp.StatusCode)
 		}
-
 		var hotels []entity.HotelResponse
 		if err := json.NewDecoder(resp.Body).Decode(&hotels); err != nil {
 			return nil, err
 		}
 		return hotels, nil
 	}
-
 	res, err := r.cb.Execute(op)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", domainErrors.ErrReservationServiceUnavailable, err)
 	}
-
 	return res.([]entity.HotelResponse), nil
 }
 
@@ -66,29 +62,24 @@ func (r *ReservationRepository) GetHotel(ctx context.Context, hotelUid uuid.UUID
 		if err != nil {
 			return nil, err
 		}
-
 		resp, err := r.client.Do(req)
 		if err != nil {
 			return nil, err
 		}
 		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("reservation service error (get hotel): status %d", resp.StatusCode)
+			return nil, fmt.Errorf("status %d", resp.StatusCode)
 		}
-
 		var hotel entity.HotelResponse
 		if err := json.NewDecoder(resp.Body).Decode(&hotel); err != nil {
 			return nil, err
 		}
 		return &hotel, nil
 	}
-
 	res, err := r.cb.Execute(op)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", domainErrors.ErrReservationServiceUnavailable, err)
 	}
-
 	return res.(*entity.HotelResponse), nil
 }
 
@@ -100,29 +91,24 @@ func (r *ReservationRepository) GetUserReservations(ctx context.Context, usernam
 			return nil, err
 		}
 		req.Header.Set("X-User-Name", username)
-
 		resp, err := r.client.Do(req)
 		if err != nil {
 			return nil, err
 		}
 		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("reservation service error (get user reservations): status %d", resp.StatusCode)
+			return nil, fmt.Errorf("status %d", resp.StatusCode)
 		}
-
 		var rawReservations []entity.ReservationServiceResponse
 		if err := json.NewDecoder(resp.Body).Decode(&rawReservations); err != nil {
 			return nil, err
 		}
 		return rawReservations, nil
 	}
-
 	res, err := r.cb.Execute(op)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", domainErrors.ErrReservationServiceUnavailable, err)
 	}
-
 	return res.([]entity.ReservationServiceResponse), nil
 }
 
@@ -134,35 +120,29 @@ func (r *ReservationRepository) GetReservation(ctx context.Context, username str
 			return nil, err
 		}
 		req.Header.Set("X-User-Name", username)
-
 		resp, err := r.client.Do(req)
 		if err != nil {
 			return nil, err
 		}
 		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("reservation service error (get reservation): status %d", resp.StatusCode)
+			return nil, fmt.Errorf("status %d", resp.StatusCode)
 		}
-
 		var resSvc entity.ReservationServiceResponse
 		if err := json.NewDecoder(resp.Body).Decode(&resSvc); err != nil {
 			return nil, err
 		}
 		return &resSvc, nil
 	}
-
 	res, err := r.cb.Execute(op)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", domainErrors.ErrReservationServiceUnavailable, err)
 	}
-
 	return res.(*entity.ReservationServiceResponse), nil
 }
 
 func (r *ReservationRepository) CreateReservation(ctx context.Context, username string, hotelUid uuid.UUID, startDate, endDate time.Time,
 	paymentUid uuid.UUID) (*entity.ReservationServiceResponse, error) {
-
 	payload := map[string]interface{}{
 		"username":    username,
 		"payment_uid": paymentUid,
@@ -171,30 +151,25 @@ func (r *ReservationRepository) CreateReservation(ctx context.Context, username 
 		"end_date":    endDate.Format("2006-01-02T15:04:05Z07:00"),
 	}
 	jsonBody, _ := json.Marshal(payload)
-
 	url := fmt.Sprintf("%s/api/v1/reservations", r.baseURL)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", domainErrors.ErrReservationServiceUnavailable, err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("X-User-Name", username)
-
 	resp, err := r.client.Do(httpReq)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", domainErrors.ErrReservationServiceUnavailable, err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("reservation service create error: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("%w: status %d", domainErrors.ErrReservationServiceUnavailable, resp.StatusCode)
 	}
-
 	var res entity.ReservationServiceResponse
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", domainErrors.ErrReservationServiceUnavailable, err)
 	}
-
 	return &res, nil
 }
 
@@ -202,19 +177,16 @@ func (r *ReservationRepository) CancelReservation(ctx context.Context, username 
 	url := fmt.Sprintf("%s/api/v1/reservations/%s", r.baseURL, reservationUid)
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domainErrors.ErrReservationServiceUnavailable, err)
 	}
 	req.Header.Set("X-User-Name", username)
-
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domainErrors.ErrReservationServiceUnavailable, err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("reservation service cancel error: status %d", resp.StatusCode)
+		return fmt.Errorf("%w: status %d", domainErrors.ErrReservationServiceUnavailable, resp.StatusCode)
 	}
-
 	return nil
 }

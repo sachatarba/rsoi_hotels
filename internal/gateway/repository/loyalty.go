@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sachatarba/rsoi_hotels/internal/gateway/domain/entity"
+	domainErrors "github.com/sachatarba/rsoi_hotels/internal/gateway/domain/errors"
 	"github.com/sachatarba/rsoi_hotels/pkg/circuitbreaker"
 	"net/http"
 	"net/url"
@@ -30,36 +31,29 @@ func (r *LoyaltyRepository) GetLoyalty(ctx context.Context, username string) (*e
 	op := func() (interface{}, error) {
 		safeUsername := url.QueryEscape(username)
 		fullUrl := fmt.Sprintf("%s/api/v1/loyalties?username=%s", r.baseURL, safeUsername)
-
 		req, err := http.NewRequestWithContext(ctx, "GET", fullUrl, nil)
 		if err != nil {
 			return nil, err
 		}
-
 		resp, err := r.client.Do(req)
 		if err != nil {
 			return nil, err
 		}
 		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("loyalty service error: status %d", resp.StatusCode)
+			return nil, fmt.Errorf("status %d", resp.StatusCode)
 		}
-
 		var loyalty entity.LoyaltyInfoResponse
 		if err := json.NewDecoder(resp.Body).Decode(&loyalty); err != nil {
 			return nil, err
 		}
-
 		return &loyalty, nil
 	}
-
-	result, err := r.cb.Execute(op)
+	res, err := r.cb.Execute(op)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", domainErrors.ErrLoyaltyServiceUnavailable, err)
 	}
-
-	return result.(*entity.LoyaltyInfoResponse), nil
+	return res.(*entity.LoyaltyInfoResponse), nil
 }
 
 func (r *LoyaltyRepository) UpdateLoyaltyCount(ctx context.Context, username string, countChange int) error {
@@ -68,23 +62,19 @@ func (r *LoyaltyRepository) UpdateLoyaltyCount(ctx context.Context, username str
 		"reservation_count": countChange,
 	}
 	jsonBody, _ := json.Marshal(body)
-
 	fullUrl := fmt.Sprintf("%s/api/v1/loyalties/reservations", r.baseURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", fullUrl, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domainErrors.ErrLoyaltyServiceUnavailable, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", domainErrors.ErrLoyaltyServiceUnavailable, err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("loyalty service update error: status %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%w: status %d", domainErrors.ErrLoyaltyServiceUnavailable, resp.StatusCode)
 	}
-
 	return nil
 }

@@ -131,6 +131,19 @@ jobs:
         id: autograder
         continue-on-error: true
 
+      - name: Debug Container Logs
+        if: always()
+        run: |
+          echo "=== GATEWAY LOGS ==="
+          docker logs gateway_app
+          echo "=== RESERVATION LOGS ==="
+          docker logs reservation_app
+          echo "=== LOYALTY LOGS ==="
+          docker logs loyalty_app
+          echo "=== PAYMENT LOGS ==="
+          docker logs payment_app
+        
+
       - name: Stop containers
         if: always()
         continue-on-error: true

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/sachatarba/rsoi_hotels/internal/gateway/domain/entity"
+	"github.com/sachatarba/rsoi_hotels/pkg/circuitbreaker"
 	"net/http"
 	"time"
 )
@@ -14,17 +15,18 @@ import (
 type PaymentRepository struct {
 	client  *http.Client
 	baseURL string
+	cb      *circuitbreaker.CircuitBreaker
 }
 
 func NewPaymentRepository(baseURL string) *PaymentRepository {
 	return &PaymentRepository{
 		client:  &http.Client{Timeout: 10 * time.Second},
 		baseURL: baseURL,
+		cb:      circuitbreaker.New(3, 1, 30*time.Second),
 	}
 }
 
 func (r *PaymentRepository) CreatePayment(ctx context.Context, price int) (uuid.UUID, error) {
-	// POST /api/v1/payments
 	body := map[string]int{
 		"price": price,
 	}
@@ -58,7 +60,6 @@ func (r *PaymentRepository) CreatePayment(ctx context.Context, price int) (uuid.
 }
 
 func (r *PaymentRepository) CancelPayment(ctx context.Context, paymentUid uuid.UUID) error {
-	// DELETE /api/v1/payments/:uid
 	url := fmt.Sprintf("%s/api/v1/payments/%s", r.baseURL, paymentUid)
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 	if err != nil {
@@ -79,34 +80,41 @@ func (r *PaymentRepository) CancelPayment(ctx context.Context, paymentUid uuid.U
 }
 
 func (r *PaymentRepository) GetPayment(ctx context.Context, paymentUid uuid.UUID) (*entity.PaymentInfo, error) {
-	// GET /api/v1/payments/:uid
-	url := fmt.Sprintf("%s/api/v1/payments/%s", r.baseURL, paymentUid)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	op := func() (interface{}, error) {
+		url := fmt.Sprintf("%s/api/v1/payments/%s", r.baseURL, paymentUid)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("payment service get error: status %d", resp.StatusCode)
+		}
+
+		var tempResp struct {
+			Status string `json:"Status"`
+			Price  int    `json:"Price"`
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(&tempResp); err != nil {
+			return nil, err
+		}
+
+		return &entity.PaymentInfo{
+			Status: tempResp.Status,
+			Price:  tempResp.Price,
+		}, nil
+	}
+
+	result, err := r.cb.Execute(op)
 	if err != nil {
 		return nil, err
 	}
-
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("payment service get error: status %d", resp.StatusCode)
-	}
-	
-	var tempResp struct {
-		Status string `json:"Status"`
-		Price  int    `json:"Price"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&tempResp); err != nil {
-		return nil, err
-	}
-
-	return &entity.PaymentInfo{
-		Status: tempResp.Status,
-		Price:  tempResp.Price,
-	}, nil
+	return result.(*entity.PaymentInfo), nil
 }

@@ -3,10 +3,10 @@ name: GitHub Classroom Workflow
 on:
   push:
     branches:
-      - master
+      - lab3
   pull_request:
     branches:
-      - master
+      - lab3
 
 env:
   ENV: ${{ secrets.ENV }}
@@ -120,12 +120,19 @@ jobs:
 
       # Postman тесты
       - name: Run API Tests
-        uses: matt-ball/newman-action@master
-        with:
-          collection: v2/postman/collection.json
-          environment: v2/postman/environment.json
-          delayRequest: 100
-          reporters: '[ "cli" ]'
+        timeout-minutes: 5
+        run: ./scripts/test-script.sh
+        env:
+        VARIANT: v2
+        SERVICE_NAME: loyalty-service
+        PORT_NUMBER: 8050
+#      - name: Run API Tests
+#        uses: matt-ball/newman-action@master
+#        with:
+#          collection: v2/postman/collection.json
+#          environment: v2/postman/environment.json
+#          delayRequest: 100
+#          reporters: '[ "cli" ]'
 
       - uses: education/autograding@v1
         id: autograder

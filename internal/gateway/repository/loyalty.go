@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/sachatarba/rsoi_hotels/internal/gateway/domain/entity"
+	"github.com/sachatarba/rsoi_hotels/pkg/circuitbreaker"
 	"net/http"
 	"net/url"
 	"time"
@@ -14,40 +15,51 @@ import (
 type LoyaltyRepository struct {
 	client  *http.Client
 	baseURL string
+	cb      *circuitbreaker.CircuitBreaker
 }
 
 func NewLoyaltyRepository(baseURL string) *LoyaltyRepository {
 	return &LoyaltyRepository{
 		client:  &http.Client{Timeout: 10 * time.Second},
 		baseURL: baseURL,
+		cb:      circuitbreaker.New(3, 1, 30*time.Second),
 	}
 }
 
 func (r *LoyaltyRepository) GetLoyalty(ctx context.Context, username string) (*entity.LoyaltyInfoResponse, error) {
-	safeUsername := url.QueryEscape(username)
-	fullUrl := fmt.Sprintf("%s/api/v1/loyalties?username=%s", r.baseURL, safeUsername)
+	op := func() (interface{}, error) {
+		safeUsername := url.QueryEscape(username)
+		fullUrl := fmt.Sprintf("%s/api/v1/loyalties?username=%s", r.baseURL, safeUsername)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", fullUrl, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", fullUrl, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := r.client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("loyalty service error: status %d", resp.StatusCode)
+		}
+
+		var loyalty entity.LoyaltyInfoResponse
+		if err := json.NewDecoder(resp.Body).Decode(&loyalty); err != nil {
+			return nil, err
+		}
+
+		return &loyalty, nil
+	}
+
+	result, err := r.cb.Execute(op)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("loyalty service error: status %d", resp.StatusCode)
-	}
-
-	var loyalty entity.LoyaltyInfoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&loyalty); err != nil {
-		return nil, err
-	}
-
-	return &loyalty, nil
+	return result.(*entity.LoyaltyInfoResponse), nil
 }
 
 func (r *LoyaltyRepository) UpdateLoyaltyCount(ctx context.Context, username string, countChange int) error {
@@ -70,7 +82,7 @@ func (r *LoyaltyRepository) UpdateLoyaltyCount(ctx context.Context, username str
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("loyalty service update error: status %d", resp.StatusCode)
 	}
 

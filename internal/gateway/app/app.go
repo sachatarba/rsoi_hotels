@@ -8,6 +8,7 @@ import (
 	"github.com/sachatarba/rsoi_hotels/internal/gateway/services"
 	"github.com/sachatarba/rsoi_hotels/pkg/httpserver"
 	"github.com/sachatarba/rsoi_hotels/pkg/logger"
+	"github.com/sachatarba/rsoi_hotels/pkg/queue"
 	"os"
 	"os/signal"
 	"syscall"
@@ -16,13 +17,17 @@ import (
 func Run(cfg *config.Config) {
 	l := logger.New(cfg.Env)
 
+	// Init Queue
+	backgroundQueue := queue.New(l)
+	backgroundQueue.StartWorker()
+
 	// Init Repos (Adapters)
 	loyaltyRepo := repository.NewLoyaltyRepository(cfg.Gateway.LoyaltyUrl)
 	paymentRepo := repository.NewPaymentRepository(cfg.Gateway.PaymentUrl)
 	reservationRepo := repository.NewReservationRepository(cfg.Gateway.ReservationUrl)
 
 	// Init Service
-	gatewayService := services.NewGatewayService(reservationRepo, paymentRepo, loyaltyRepo, l)
+	gatewayService := services.NewGatewayService(reservationRepo, paymentRepo, loyaltyRepo, l, backgroundQueue)
 
 	// Init HTTP
 	app := gin.New()

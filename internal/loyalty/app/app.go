@@ -29,6 +29,7 @@ func Run(cfg *config.Config) {
 
 	if err != nil {
 		l.Error("Error creating postgres instance", "error", err)
+		return
 	}
 
 	loyaltyRepo := repository.NewLoyaltyRepository(pg.Pool, l)

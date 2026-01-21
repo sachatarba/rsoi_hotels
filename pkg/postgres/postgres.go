@@ -33,6 +33,10 @@ func New(url string, opts ...Option) (*Postgres, error) {
 		opt(pg)
 	}
 
+	if pg.connAttempts == 0 {
+		pg.connAttempts = _defaultConnAttempts
+	}
+
 	poolConfig, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("postgres: error parsing connection url %s: %w", url, err)
@@ -41,26 +45,20 @@ func New(url string, opts ...Option) (*Postgres, error) {
 
 	for pg.connAttempts > 0 {
 		pg.Pool, err = pgxpool.NewWithConfig(context.Background(), poolConfig)
-		if err != nil {
-			log.Printf("Error creating pool: trying to connect to postgres at %s, attempts left %d", url, pg.connAttempts)
-			continue
-		}
-
-		err = pg.Pool.Ping(context.Background())
 		if err == nil {
-			break
+			err = pg.Pool.Ping(context.Background())
+			if err == nil {
+				return pg, nil
+			}
+			pg.Pool.Close()
 		}
 
-		log.Printf("Ping postgres error: trying to connect to postgres at %s, attempts left %d", url, pg.connAttempts)
+		log.Printf("Ping postgres error: trying to connect to postgres at %s, attempts left %d. Error: %v", url, pg.connAttempts, err)
 
 		time.Sleep(pg.connTimeout)
 
 		pg.connAttempts--
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("postgres: error creating connection pool: %w", err)
-	}
-
-	return pg, nil
+	return nil, fmt.Errorf("postgres: error creating connection pool: %w", err)
 }

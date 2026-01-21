@@ -123,9 +123,9 @@ jobs:
         timeout-minutes: 5
         run: ./scripts/test-script.sh
         env:
-        VARIANT: v2
-        SERVICE_NAME: loyalty-service
-        PORT_NUMBER: 8050
+          VARIANT: v2
+          SERVICE_NAME: loyalty-service
+          PORT_NUMBER: 8050
 #      - name: Run API Tests
 #        uses: matt-ball/newman-action@master
 #        with:

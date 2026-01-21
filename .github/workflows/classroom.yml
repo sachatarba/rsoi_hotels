@@ -113,7 +113,7 @@ jobs:
         timeout-minutes: 5
         run: |
           docker compose up -d
-          chmod +x ./scripts/wait-script.sh
+          chmod +x ./scripts/*.sh
           ./scripts/wait-script.sh
         env:
           WAIT_PORTS: "${{ secrets.GATEWAY_SERVICE_PORT }},${{ secrets.RESERVATION_SERVICE_PORT }},${{ secrets.PAYMENT_SERVICE_PORT }},${{ secrets.LOYALTY_SERVICE_PORT }}"
